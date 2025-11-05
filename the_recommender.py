@@ -4,8 +4,8 @@ from lightfm.data import Dataset
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
-from lightfm.evaluation import precision_at_k, auc_score
 import pickle
+from scipy import sparse
 
 dataset = Dataset()
 
@@ -46,58 +46,60 @@ def combine_features(row):
 metadata['features'] = metadata.apply(combine_features, axis=1)
 print("COMBINED FEATURES")
 
-user_encoder = LabelEncoder()
-item_encoder = LabelEncoder()
 
-ratings['user_id_enc'] = user_encoder.fit_transform(ratings['user_id'])
-ratings['item_id_enc'] = item_encoder.fit_transform(ratings['item_id'])
-metadata['item_id_enc'] = item_encoder.fit_transform(metadata['item_id'])
-dataset.fit(users=ratings['user_id_enc'].unique(),items=metadata['item_id_enc'].unique())
+all_item_ids = pd.concat([ratings['item_id'], metadata['item_id']]).unique()
+
+dataset.fit(users=ratings['user_id'].unique(),items=all_item_ids,item_features=set(f for feats in metadata['features'] for f in feats))
 
 num_users, num_items = dataset.interactions_shape()
 print('Num users: {}, num_items {}.'.format(num_users, num_items))
-"""
+
 
 train_list=[]
 test_list=[]
-for user, user_df in ratings.groupby('userId'):
+
+for user, user_df in ratings.groupby('user_id'):
     train_list.append(user_df[:-5])
     test_list.append(user_df[-5:])
 
 train = pd.concat(train_list)
 
-
 test = pd.concat(test_list)
 
 print("Train size:", len(train))
 print("Test size:", len(test))
-print("Users in train:", train['userId'].nunique())
-print("Users in test:", test['userId'].nunique())
+print("Users in train:", train['user_id'].nunique())
+print("Users in test:", test['user_id'].nunique())
+
 (interactions_train, weights_train) = dataset.build_interactions(
-    (x['userId_enc'], x['movieId_enc'], x['rating']) for _, x in train.iterrows()
+    (x['user_id'], x['item_id'], x['rating']) for _, x in train.iterrows()
 )
 
 (interactions_test, weights_test) = dataset.build_interactions(
-    (x['userId_enc'], x['movieId_enc'], x['rating']) for _, x in test.iterrows()
+    (x['user_id'], x['item_id'], x['rating']) for _, x in test.iterrows()
 )
 
-model = LightFM(loss='logistic', random_state=42)
-model.fit(interactions_train, epochs=20, sample_weight=weights_train,verbose=True)
-print("DONE")
+item_features = dataset.build_item_features(
+    (x['item_id'], x['features']) for _, x in metadata.iterrows()
+)
 
+print("BUILT INTERACTION AND FEATURE SETS")
+print("TRAINING")
+model = LightFM(loss='logistic', random_state=42, no_components=75,)
+model.fit(interactions_train, item_features=item_features, epochs=20, sample_weight=weights_train,verbose=True)
+print("TRAINING DONE")
 
-print("Train precision: %.2f" % precision_at_k(model, interactions_train, k=10).mean())
-print("Test precision:  %.2f" % precision_at_k(model, interactions_test, k=10).mean())
-
-print("Train AUC: %.2f" % auc_score(model, interactions_train).mean())
-print("Test AUC:  %.2f" % auc_score(model, interactions_test).mean())
-
-with open('/model/lightfm_model.pkl', 'wb') as f:
+sparse.save_npz("models/item_features.npz", item_features)
+with open('models/lightfm_model.pkl', 'wb') as f:
     pickle.dump(model, f)
 
-with open('/model/user_encoder.pkl', 'wb') as f:
-    pickle.dump(user_encoder, f)
 
-with open('/model/item_encoder.pkl', 'wb') as f:
-    pickle.dump(item_encoder, f)
+print("MODEL SAVED")
+"""
+print("Train precision: %.2f" % precision_at_k(model, interactions_train,item_features=item_features, k=10).mean())
+print("Test precision:  %.2f" % precision_at_k(model, interactions_test,item_features=item_features, k=10).mean())
+
+print("Train AUC: %.2f" % auc_score(model, interactions_train,item_features=item_features).mean())
+print("Test AUC:  %.2f" % auc_score(model, interactions_test,item_features=item_features).mean())
+
 """
