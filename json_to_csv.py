@@ -1,14 +1,12 @@
+#PROGRAM TO WRITE JSON DATASET TO CSV
+
 import pandas as pd
 import csv
-dtypes = {
-    "user_id": "int64",
-    "item_id": "int64",
-    "rating": "float32"
-}
-chunks = pd.read_json('genome_2021/raw/ratings.json', lines=True, chunksize=500_000)
+
+chunks = pd.read_json('genome_2021/raw/reviews.json', lines=True, chunksize=500_000)
 for chunk in chunks:
-    chunk = chunk.astype(dtypes)
-    chunk = chunk[["user_id", "item_id", "rating"]]
+
+    chunk = chunk[["item_id", "txt"]]
 
     # Save or append to smaller file
-    chunk.to_csv('ratings_clean.csv', mode='a', header=False, index=False)
+    chunk.to_csv('reviews.csv', mode='a', header=False, index=False)
